@@ -1435,8 +1435,7 @@ input[type="number"] {
 
 .user-menu-dropdown {
   position: fixed;
-  top: 76px;
-  right: 16px;
+  right: 0;
   min-width: 200px;
   padding: 8px;
   z-index: 100;

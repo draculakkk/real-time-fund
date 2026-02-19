@@ -445,7 +445,7 @@ export default function HomePage() {
     };
 
     checkUpdate();
-    const interval = setInterval(checkUpdate, 10 * 60 * 1000); // 10 minutes
+    const interval = setInterval(checkUpdate, 30 * 60 * 1000); // 30 minutes
     return () => clearInterval(interval);
   }, []);
 
@@ -2794,7 +2794,7 @@ export default function HomePage() {
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -10, scale: 0.95 }}
                   transition={{ duration: 0.15 }}
-                  style={{ transformOrigin: 'top right' }}
+                  style={{ transformOrigin: 'top right', top: navbarHeight + (isMobile ? -20 : 10) }}
                 >
                   {user ? (
                     <>
