@@ -460,6 +460,9 @@ export default function HomePage() {
   const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
+    // 未配置 GitHub 最新版本接口地址时，不进行更新检查
+    if (!process.env.NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL) return;
+
     const checkUpdate = async () => {
       try {
         const data = await fetchLatestRelease();

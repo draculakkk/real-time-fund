@@ -432,7 +432,10 @@ export const fetchShanghaiIndexDate = async () => {
 };
 
 export const fetchLatestRelease = async () => {
-  const res = await fetch('https://api.github.com/repos/hzm0321/real-time-fund/releases/latest');
+  const url = process.env.NEXT_PUBLIC_GITHUB_LATEST_RELEASE_URL;
+  if (!url) return null;
+
+  const res = await fetch(url);
   if (!res.ok) return null;
   const data = await res.json();
   return {
