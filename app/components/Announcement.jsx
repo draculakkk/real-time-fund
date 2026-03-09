@@ -79,7 +79,13 @@ export default function Announcement() {
               <p>1. 二次确认弹框层级问题修复。</p>
               <p>2. 净值列新增日期。</p>
               <p>3. 重发微信用户支持群二维码(底部提交反馈处)。</p>
-              <p>注：用户支持群禁止讨论基金及金融买卖相关内容。</p>
+              <br/>
+              <div
+                className="trade-pending-alert"
+                style={{marginBottom: 0}}
+              >
+                <span>⚠️ 注：用户支持群禁止讨论基金及金融买卖相关内容。</span>
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
