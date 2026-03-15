@@ -60,6 +60,7 @@ import RefreshButton from "./components/RefreshButton";
 import WeChatModal from "./components/WeChatModal";
 import DcaModal from "./components/DcaModal";
 import MarketIndexAccordion from "./components/MarketIndexAccordion";
+import SortSettingModal from "./components/SortSettingModal";
 import githubImg from "./assets/github.svg";
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { toast as sonnerToast } from 'sonner';
@@ -162,10 +163,20 @@ export default function HomePage() {
   const [groupManageOpen, setGroupManageOpen] = useState(false);
   const [addFundToGroupOpen, setAddFundToGroupOpen] = useState(false);
 
+  const DEFAULT_SORT_RULES = [
+    { id: 'default', label: '默认', enabled: true },
+    // 估值涨幅为原始名称，“涨跌幅”为别名
+    { id: 'yield', label: '估值涨幅', alias: '涨跌幅', enabled: true },
+    { id: 'holding', label: '持有收益', enabled: true },
+    { id: 'name', label: '名称', enabled: true },
+  ];
+
   // 排序状态
   const [sortBy, setSortBy] = useState('default'); // default, name, yield, holding
   const [sortOrder, setSortOrder] = useState('desc'); // asc | desc
   const [isSortLoaded, setIsSortLoaded] = useState(false);
+  const [sortRules, setSortRules] = useState(DEFAULT_SORT_RULES);
+  const [sortSettingOpen, setSortSettingOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -173,6 +184,46 @@ export default function HomePage() {
       const savedSortOrder = window.localStorage.getItem('localSortOrder');
       if (savedSortBy) setSortBy(savedSortBy);
       if (savedSortOrder) setSortOrder(savedSortOrder);
+
+      // 1）优先从 customSettings.localSortRules 读取
+      // 2）兼容旧版独立 localSortRules 字段
+      let rulesFromSettings = null;
+      try {
+        const rawSettings = window.localStorage.getItem('customSettings');
+        if (rawSettings) {
+          const parsed = JSON.parse(rawSettings);
+          if (parsed && Array.isArray(parsed.localSortRules)) {
+            rulesFromSettings = parsed.localSortRules;
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!rulesFromSettings) {
+        const legacy = window.localStorage.getItem('localSortRules');
+        if (legacy) {
+          try {
+            const parsed = JSON.parse(legacy);
+            if (Array.isArray(parsed)) {
+              rulesFromSettings = parsed;
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (rulesFromSettings && rulesFromSettings.length) {
+        const merged = DEFAULT_SORT_RULES.map((rule) => {
+          const found = rulesFromSettings.find((r) => r.id === rule.id);
+          return found
+            ? { ...rule, enabled: found.enabled !== false }
+            : rule;
+        });
+        setSortRules(merged);
+      }
+
       setIsSortLoaded(true);
     }
   }, []);
@@ -181,8 +232,36 @@ export default function HomePage() {
     if (typeof window !== 'undefined' && isSortLoaded) {
       window.localStorage.setItem('localSortBy', sortBy);
       window.localStorage.setItem('localSortOrder', sortOrder);
+      try {
+        const raw = window.localStorage.getItem('customSettings');
+        const parsed = raw ? JSON.parse(raw) : {};
+        const next = {
+          ...(parsed && typeof parsed === 'object' ? parsed : {}),
+          localSortRules: sortRules,
+        };
+        window.localStorage.setItem('customSettings', JSON.stringify(next));
+        // 更新后标记 customSettings 脏并触发云端同步
+        triggerCustomSettingsSync();
+      } catch {
+        // ignore
+      }
     }
-  }, [sortBy, sortOrder, isSortLoaded]);
+  }, [sortBy, sortOrder, sortRules, isSortLoaded]);
+
+  // 当用户关闭某个排序规则时，如果当前 sortBy 不再可用，则自动切换到第一个启用的规则
+  useEffect(() => {
+    const enabledRules = (sortRules || []).filter((r) => r.enabled);
+    const enabledIds = enabledRules.map((r) => r.id);
+    if (!enabledIds.length) {
+      // 至少保证默认存在
+      setSortRules(DEFAULT_SORT_RULES);
+      setSortBy('default');
+      return;
+    }
+    if (!enabledIds.includes(sortBy)) {
+      setSortBy(enabledIds[0]);
+    }
+  }, [sortRules, sortBy]);
 
   // 视图模式
   const [viewMode, setViewMode] = useState('card'); // card, list
@@ -3912,17 +3991,29 @@ export default function HomePage() {
               <div className="divider" style={{ width: '1px', height: '20px', background: 'var(--border)' }} />
 
               <div className="sort-items" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="muted" style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <SortIcon width="14" height="14" />
-                  排序
-                </span>
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={() => setSortSettingOpen(true)}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: '12px',
+                    color: 'var(--muted-foreground)',
+                    cursor: 'pointer',
+                    width: '50px',
+                  }}
+                  title="排序个性化设置"
+                >
+                  <span className="muted">排序</span>
+                  <SettingsIcon width="14" height="14" />
+                </button>
                 <div className="chips">
-                  {[
-                    { id: 'default', label: '默认' },
-                    { id: 'yield', label: '涨跌幅' },
-                    { id: 'holding', label: '持有收益' },
-                    { id: 'name', label: '名称' },
-                  ].map((s) => (
+                  {sortRules.filter((s) => s.enabled).map((s) => (
                     <button
                       key={s.id}
                       className={`chip ${sortBy === s.id ? 'active' : ''}`}
@@ -3938,7 +4029,7 @@ export default function HomePage() {
                       }}
                       style={{ height: '28px', fontSize: '12px', padding: '0 10px', display: 'flex', alignItems: 'center', gap: 4 }}
                     >
-                      <span>{s.label}</span>
+                      <span>{s.alias || s.label}</span>
                       {s.id !== 'default' && sortBy === s.id && (
                         <span
                           style={{
@@ -4616,6 +4707,16 @@ export default function HomePage() {
           handleVerifyEmailOtp={handleVerifyEmailOtp}
         />
       )}
+
+      {/* 排序个性化设置弹框 */}
+      <SortSettingModal
+        open={sortSettingOpen}
+        onClose={() => setSortSettingOpen(false)}
+        isMobile={isMobile}
+        rules={sortRules}
+        onChangeRules={setSortRules}
+        onResetRules={() => setSortRules(DEFAULT_SORT_RULES)}
+      />
 
       {/* 全局轻提示 Toast */}
       <AnimatePresence>
