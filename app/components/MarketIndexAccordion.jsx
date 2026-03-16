@@ -344,7 +344,7 @@ export default function MarketIndexAccordion({
           display: none;
         }
         :global([data-theme='dark'] .market-index-accordion-root) {
-          background-color: rgba(15, 23, 42, 0.9);
+          background-color: rgba(15, 23, 42);
         }
         .market-index-ticker {
           overflow: hidden;
