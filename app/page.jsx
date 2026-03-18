@@ -4729,15 +4729,12 @@ export default function HomePage() {
       )}
 
       {/* 更新提示弹窗 */}
-      <AnimatePresence>
-        {updateModalOpen && (
-          <UpdatePromptModal
-            updateContent={updateContent}
-            onClose={() => setUpdateModalOpen(false)}
-            onRefresh={() => window.location.reload()}
-          />
-        )}
-      </AnimatePresence>
+      <UpdatePromptModal
+        open={updateModalOpen}
+        updateContent={updateContent}
+        onClose={() => setUpdateModalOpen(false)}
+        onRefresh={() => window.location.reload()}
+      />
 
       <AnimatePresence>
         {isScanning && (
