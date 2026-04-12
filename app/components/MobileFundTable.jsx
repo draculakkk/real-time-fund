@@ -27,7 +27,6 @@ import { throttle } from 'lodash';
 import FitText from './FitText';
 import MobileFundCardDrawer from './MobileFundCardDrawer';
 import MobileSettingModal from './MobileSettingModal';
-import ConfirmModal from './ConfirmModal';
 import MoveGroupModal from './MoveGroupModal';
 import { CloseIcon, DragIcon, FolderPlusIcon, PencilIcon, SettingsIcon, StarIcon, TrashIcon } from './Icons';
 import { fetchFundPeriodReturns, fetchRelatedSectors, fetchRelatedSectorLiveQuote } from '@/app/api/fund';
@@ -300,7 +299,8 @@ function SortableRow({ row, children, isTableDragging, disabled }) {
  * @param {(row: any) => Object} [props.getFundCardProps] - 给定行返回 FundCard 的 props；传入后点击基金名称将用底部弹框展示卡片视图
  * @param {boolean} [props.masked] - 是否隐藏持仓相关金额
  * @param {string} [props.relatedSectorSessionKey] - 登录用户 id（未登录传空），用于关联板块查询缓存与登录后重新拉取
- * @param {(items: { code: string; name?: string }[]) => void} [props.onBulkRemoveFundsConfirmed] - 批量删除二次确认后执行（与单条删除作用域一致）
+ * @param {(codes: string[]) => boolean|void} [props.onRemoveFunds] - 批量删除（与 PcFundTable 一致）；返回 false 表示父级已弹出二次确认，勿退出编辑态
+ * @param {React.MutableRefObject<(() => void) | null>} [props.batchSelectionClearRef] - 父级批量删除二次确认成功后调用，用于退出移动端编辑态
  * @param {Array<{ id: string; name?: string; codes?: string[] }>} [props.groups] - 自定义分组列表（移动分组弹框用）
  * @param {(payload: { codes: string[]; fromTab: string; targetId: string; dryRun?: boolean; overwrite?: boolean }) => Promise<{ conflicts?: string[] }|void>} [props.onMoveFunds] - 批量迁移分组（与 PC 一致）
  * @param {(open: boolean) => void} [props.onFundCardDrawerOpenChange] - 基金详情底部 Drawer 打开/关闭时通知父级（用于隐藏底栏等）
@@ -325,13 +325,13 @@ export default function MobileFundTable({
   closeDrawerRef,
   masked = false,
   relatedSectorSessionKey = '',
-  onBulkRemoveFundsConfirmed,
+  onRemoveFunds,
+  batchSelectionClearRef,
   onFundCardDrawerOpenChange,
   onMobileSettingModalOpenChange,
 }) {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editSelectedCodes, setEditSelectedCodes] = useState(() => new Set());
-  const [bulkRemoveConfirmOpen, setBulkRemoveConfirmOpen] = useState(false);
   const [moveGroupOpen, setMoveGroupOpen] = useState(false);
 
   const editLongPressRef = useRef({ timer: null, startX: 0, startY: 0 });
@@ -354,9 +354,16 @@ export default function MobileFundTable({
     clearEditLongPressTimer();
     setIsEditMode(false);
     setEditSelectedCodes(new Set());
-    setBulkRemoveConfirmOpen(false);
     setMoveGroupOpen(false);
   }, [clearEditLongPressTimer]);
+
+  useEffect(() => {
+    if (!batchSelectionClearRef) return undefined;
+    batchSelectionClearRef.current = () => exitEditMode();
+    return () => {
+      batchSelectionClearRef.current = null;
+    };
+  }, [batchSelectionClearRef, exitEditMode]);
 
   useEffect(() => {
     setEditSelectedCodes(new Set());
@@ -1165,8 +1172,10 @@ export default function MobileFundTable({
                   setMoveGroupOpen(true);
                 }}
                 onRemove={() => {
-                  if (selectedCount === 0) return;
-                  setBulkRemoveConfirmOpen(true);
+                  if (!onRemoveFunds || selectedCount === 0) return;
+                  const codes = Array.from(editSelectedCodes);
+                  const shouldClear = onRemoveFunds(codes);
+                  if (shouldClear !== false) exitEditMode();
                 }}
                 onClose={exitEditMode}
                 hasMoveFunds={!!onMoveFunds}
@@ -1678,6 +1687,7 @@ export default function MobileFundTable({
       editSelectedCodes,
       exitEditMode,
       onMoveFunds,
+      onRemoveFunds,
       clearEditLongPressTimer,
       masked,
       onReorder,
@@ -1999,36 +2009,13 @@ export default function MobileFundTable({
         <MobileFundCardDrawer
           open={!!(cardSheetRow && getFundCardProps)}
           onOpenChange={(open) => { if (!open) setCardSheetRow(null); }}
-          blockDrawerClose={blockDrawerClose || bulkRemoveConfirmOpen || moveGroupOpen}
+          blockDrawerClose={blockDrawerClose || moveGroupOpen}
           ignoreNextDrawerCloseRef={ignoreNextDrawerCloseRef}
           cardSheetRow={cardSheetRow}
           getFundCardProps={getFundCardPropsWithRelatedSector}
         />
 
         {!onlyShowHeader && showPortalHeader && ReactDOM.createPortal(renderContent(true), document.body)}
-
-        {!onlyShowHeader && bulkRemoveConfirmOpen && (
-          <ConfirmModal
-            title="批量删除"
-            message={
-              isCustomGroupTab
-                ? `确定从当前分组中移除已选的 ${editSelectedCodes.size} 支基金吗？将清除这些基金在本分组内的持仓与相关记录，不会在「全部」中删除。`
-                : `确定删除已选的 ${editSelectedCodes.size} 支基金吗？将从列表中移除这些基金及其全部持仓与相关数据。`
-            }
-            confirmText="确定删除"
-            onConfirm={() => {
-              const items = Array.from(editSelectedCodes)
-                .map((code) => {
-                  const r = data.find((d) => d.code === code);
-                  return r ? { code: r.code, name: r.fundName } : { code };
-                })
-                .filter((x) => x.code);
-              onBulkRemoveFundsConfirmed?.(items);
-              exitEditMode();
-            }}
-            onCancel={() => setBulkRemoveConfirmOpen(false)}
-          />
-        )}
 
         {!onlyShowHeader && moveGroupOpen && (
           <MoveGroupModal

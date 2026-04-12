@@ -580,6 +580,7 @@ export default function HomePage() {
   const fundDetailDrawerCloseRef = useRef(null); // 由 MobileFundTable 注入，用于确认删除时关闭基金详情 Drawer
   const fundDetailDialogCloseRef = useRef(null); // 由 PcFundTable 注入，用于确认删除时关闭基金详情 Dialog
   const pcBatchClearSelectionRef = useRef(null); // 由 PcFundTable 注入，批量删除二次确认成功后清空表格多选
+  const mobileBatchClearSelectionRef = useRef(null); // 由 MobileFundTable 注入，批量删除二次确认成功后退出编辑态
 
   const todayStr = formatDate();
 
@@ -4234,7 +4235,12 @@ export default function HomePage() {
         .filter((g) => g.codes.includes(code))
         .map((g) => g.name);
       if (otherGroupNames.length > 0) {
-        fundsWithOtherGroups.push({ code, otherGroups: otherGroupNames });
+        const meta = funds.find((f) => f.code === code);
+        fundsWithOtherGroups.push({
+          code,
+          name: meta?.name || code,
+          otherGroups: otherGroupNames,
+        });
       }
     }
     const needsGlobalConfirm = list.some((code) => {
@@ -4257,6 +4263,10 @@ export default function HomePage() {
     showToast(`已删除 ${list.length} 支基金`, 'success');
     return true;
   };
+
+  /** PC / 移动端列表共用：批量删除当前 Tab 下选中基金（与 PcFundTable onRemoveFunds 一致） */
+  const removeFundsFromCurrentTabHandler = (codes) =>
+    requestRemoveFundsFromCurrentGroup(codes);
 
   /**
    * 批量迁移分组（含持仓/交易/待处理/定投等分组作用域数据）
@@ -6045,9 +6055,11 @@ export default function HomePage() {
   /** 移动端底部 Tab 切换时保留首页 DOM，用显隐代替卸载 */
   const mobileHomeTabVisible = !isMobile || mobileMainTab === 'home';
 
-  const handleRemoveFundRow = useCallback((row) => {
-    if (!row || !row.code) return;
-    requestRemoveFund({ code: row.code, name: row.fundName });
+  /** PC / 移动端行、FundCard 共用：统一 name / fundName 后走单删逻辑 */
+  const handleRemoveFundEntry = useCallback((rowOrFund) => {
+    if (!rowOrFund?.code) return;
+    const name = rowOrFund.name ?? rowOrFund.fundName ?? rowOrFund.code;
+    requestRemoveFund({ code: rowOrFund.code, name });
   }, [requestRemoveFund]);
 
   const handleToggleFavoriteRow = useCallback((row) => {
@@ -6102,7 +6114,7 @@ export default function HomePage() {
       isTradingDay,
       getHoldingProfit: getHoldingProfitForTab,
       onToggleFavorite: toggleFavorite,
-      onRemoveFund: requestRemoveFund,
+      onRemoveFund: handleRemoveFundEntry,
       onHoldingClick: openHoldingModal,
       onActionClick: openActionModal,
       onPercentModeToggle: togglePercentMode,
@@ -6131,7 +6143,7 @@ export default function HomePage() {
     isTradingDay,
     getHoldingProfitForTab,
     toggleFavorite,
-    requestRemoveFund,
+    handleRemoveFundEntry,
     openHoldingModal,
     openActionModal,
     togglePercentMode,
@@ -6886,8 +6898,8 @@ export default function HomePage() {
                                 favorites={favorites}
                                 sortBy={sortBy}
                                 onReorder={handleReorder}
-                                onRemoveFund={handleRemoveFundRow}
-                                onRemoveFunds={(codes) => requestRemoveFundsFromCurrentGroup(codes)}
+                                onRemoveFund={handleRemoveFundEntry}
+                                onRemoveFunds={removeFundsFromCurrentTabHandler}
                                 onMoveFunds={handleMoveFunds}
                                 batchSelectionClearRef={pcBatchClearSelectionRef}
                                 onToggleFavorite={handleToggleFavoriteRow}
@@ -6916,26 +6928,12 @@ export default function HomePage() {
                         blockDrawerClose={!!fundDeleteConfirm || !!fundDeleteBulkConfirm}
                         closeDrawerRef={fundDetailDrawerCloseRef}
                         onReorder={handleReorder}
-                        onRemoveFund={handleRemoveFundRow}
+                        onRemoveFund={handleRemoveFundEntry}
+                        onRemoveFunds={removeFundsFromCurrentTabHandler}
                         onToggleFavorite={handleToggleFavoriteRow}
                         onHoldingAmountClick={handleHoldingAmountClickRow}
                         onHoldingProfitClick={handleHoldingProfitClickRow}
-                        onBulkRemoveFundsConfirmed={(items) => {
-                          fundDetailDrawerCloseRef.current?.();
-                          const gid =
-                            currentTab !== 'all' && currentTab !== 'fav' && groups.some((g) => g.id === currentTab)
-                              ? currentTab
-                              : null;
-                          const valid = (items || []).filter((x) => x?.code);
-                          if (valid.length === 0) return;
-                          const codes = valid.map((x) => x.code);
-                          if (gid) stripManyFundsFromGroupScope(codes, gid);
-                          else removeFundsBulk(codes);
-                          showToast(
-                            gid ? `已从当前分组移除 ${valid.length} 支基金` : `已删除 ${valid.length} 支基金`,
-                            'success'
-                          );
-                        }}
+                        batchSelectionClearRef={mobileBatchClearSelectionRef}
                         onCustomSettingsChange={triggerCustomSettingsSync}
                         onFundCardDrawerOpenChange={handleFundCardDrawerOpenChange}
                         onMobileSettingModalOpenChange={handleMobileSettingModalOpenChange}
@@ -6974,7 +6972,7 @@ export default function HomePage() {
                               isTradingDay={isTradingDay}
                               getHoldingProfit={getHoldingProfitForTab}
                               onToggleFavorite={toggleFavorite}
-                              onRemoveFund={requestRemoveFund}
+                              onRemoveFund={handleRemoveFundEntry}
                               onHoldingClick={openHoldingModal}
                               onActionClick={openActionModal}
                               onPercentModeToggle={togglePercentMode}
@@ -7088,21 +7086,20 @@ export default function HomePage() {
             }
             messageContent={
               fundDeleteBulkConfirm.scope === 'global' && fundDeleteBulkConfirm.fundsWithOtherGroups && fundDeleteBulkConfirm.fundsWithOtherGroups.length > 0
-                ? <>
-                    以下基金还存在于其他分组：
-                    <br />
-                    {fundDeleteBulkConfirm.fundsWithOtherGroups.map((f, i) => (
-                      <span key={f.code}>
-                        <span className="text-[var(--primary)] font-semibold">{f.code}</span>
-                        {'（'}
-                        <span className="text-[var(--primary)] font-semibold">{f.otherGroups.join('、')}</span>
-                        {'）'}
-                        {i < fundDeleteBulkConfirm.fundsWithOtherGroups.length - 1 ? '、' : ''}
-                      </span>
-                    ))}
-                    <br />
-                    删除后将同时从这些分组中移除。确定要彻底删除已选的 {fundDeleteBulkConfirm.count} 支基金吗？
-                  </>
+                ? (
+                    <div className="flex flex-col gap-3 text-left">
+                      {fundDeleteBulkConfirm.fundsWithOtherGroups.map((f) => (
+                        <p key={f.code} className="m-0 leading-relaxed">
+                          基金 &#34;{f.name}&#34; 还存在于以下分组：
+                          <span className="text-[var(--primary)] font-semibold">{f.otherGroups.join('、')}</span>
+                          。删除后将同时从这些分组中移除。
+                        </p>
+                      ))}
+                      <p className="m-0 leading-relaxed">
+                        确定要彻底删除已选的全部 {fundDeleteBulkConfirm.count} 支基金吗？
+                      </p>
+                    </div>
+                  )
                 : null
             }
             confirmText="确定删除"
@@ -7117,6 +7114,7 @@ export default function HomePage() {
                 showToast(`已从当前分组移除 ${fundDeleteBulkConfirm.count} 支基金`, 'success');
               }
               pcBatchClearSelectionRef.current?.();
+              mobileBatchClearSelectionRef.current?.();
               setFundDeleteBulkConfirm(null);
             }}
             onCancel={() => setFundDeleteBulkConfirm(null)}

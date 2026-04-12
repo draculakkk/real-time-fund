@@ -43,8 +43,11 @@ export default function ConfirmModal({
           )}
           <DialogTitle className="flex-1 text-base font-semibold">{title}</DialogTitle>
         </DialogHeader>
-        <DialogDescription className="text-left text-sm leading-relaxed text-[var(--muted-foreground)]">
-          {messageContent || message}
+        {/* asChild + div：避免 Description 默认 <p> 与 messageContent 内块级元素嵌套导致 hydration 报错 */}
+        <DialogDescription asChild>
+          <div className="text-left text-sm leading-relaxed text-[var(--muted-foreground)]">
+            {messageContent || message}
+          </div>
         </DialogDescription>
         <div className="flex flex-col gap-3 sm:flex-row">
           <button
