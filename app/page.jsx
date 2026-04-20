@@ -6159,7 +6159,16 @@ export default function HomePage() {
       setFavorites(new Set(nextFavorites));
       storageHelper.setItem('favorites', JSON.stringify(nextFavorites));
 
-      const nextGroups = Array.isArray(cloudData.groups) ? cloudData.groups : [];
+      const nextGroups = Array.isArray(cloudData.groups)
+        ? cloudData.groups
+            .map((g) => ({
+              ...g,
+              id: String(g?.id ?? '').trim() || uuidv4(),
+              name: String(g?.name ?? '').trim(),
+              codes: cleanCodeArray(g?.codes, nextFundCodes),
+            }))
+            .filter((g) => g.codes.length > 0)
+        : [];
       setGroups(nextGroups);
       storageHelper.setItem('groups', JSON.stringify(nextGroups));
 
