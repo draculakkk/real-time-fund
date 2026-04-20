@@ -8174,6 +8174,8 @@ export default function HomePage() {
             allFunds={funds}
             currentGroupCodes={groups.find(g => g.id === currentTab)?.codes || []}
             holdings={holdingsForTabWithLinked}
+            fundTagListsByCode={fundTagListsByCode}
+            fundTagRecords={fundTagRecords}
             onClose={() => setAddFundToGroupOpen(false)}
             onAdd={handleAddFundsToGroup}
           />
