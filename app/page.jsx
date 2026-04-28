@@ -6417,19 +6417,6 @@ export default function HomePage() {
   );
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (isAnyModalOpen) {
-      el.style.overflow = 'hidden';
-    } else {
-      el.style.overflow = '';
-    }
-    return () => {
-      if (containerRef.current) containerRef.current.style.overflow = '';
-    };
-  }, [isAnyModalOpen]);
-
-  useEffect(() => {
     if (!isMobile || mobileMainTab !== 'home' || isAnyModalOpen) return;
 
     let ticking = false;
