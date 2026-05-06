@@ -15,6 +15,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import { isNumber, isString, isPlainObject, isNil } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
 import { toast as sonnerToast } from 'sonner';
+import { RefreshCw } from 'lucide-react';
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 import {
   Select,
@@ -2355,11 +2356,13 @@ export default function HomePage() {
   });
 
   const [cloudConfigModal, setCloudConfigModal] = useState({ open: false, userId: null });
+  const [deviceConflictModal, setDeviceConflictModal] = useState({ open: false, message: '', userId: null, payload: null, isPartial: false });
   const syncDebounceRef = useRef(null);
 
   const lastSyncedRef = useRef('');
   const skipSyncRef = useRef(isSupabaseConfigured);
   const userIdRef = useRef(null);
+  const deviceConflictModalOpenRef = useRef(false);
   const dirtyKeysRef = useRef(new Set()); // 记录发生变化的字段
 
   useEffect(() => {
@@ -2375,6 +2378,10 @@ export default function HomePage() {
   useEffect(() => {
     userIdRef.current = user?.id || null;
   }, [user]);
+
+  useEffect(() => {
+    deviceConflictModalOpenRef.current = deviceConflictModal.open;
+  }, [deviceConflictModal.open]);
 
 
   const scheduleSync = useCallback(() => {
@@ -3487,6 +3494,7 @@ export default function HomePage() {
     const channel = supabase
       .channel(`user-configs-${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_configs', filter: `last_device_id=neq.${deviceId}` }, async (payload) => {
+        if (deviceConflictModalOpenRef.current) return; // 如果有拦截弹窗，忽略实时推送，防止覆盖本地数据
         if (payload.eventType !== 'INSERT' && payload.eventType !== 'UPDATE') return;
         const incoming = payload?.new?.data;
         if (!isPlainObject(incoming)) return;
@@ -3717,6 +3725,16 @@ export default function HomePage() {
   };
 
   const refreshAll = async (codes) => {
+    // 如果弹窗拦截同步中，则不允许执行数据刷新，但保持心跳循环
+    if (deviceConflictModalOpenRef.current) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        const nextCodes = refreshCodesRef.current || [];
+        if (nextCodes.length) refreshAll(nextCodes);
+      }, refreshMs);
+      return;
+    }
+    
     // 【步骤 1】重入锁检查：防止多个刷新任务同时运行导致状态混乱
     if (refreshingRef.current) return;
     refreshingRef.current = true;
@@ -5379,7 +5397,7 @@ export default function HomePage() {
     return { ...cloudFund, ...patch };
   };
 
-  const applyCloudConfig = async (cloudData, cloudUpdatedAt) => {
+  const applyCloudConfig = async (cloudData, cloudUpdatedAt, options = {}) => {
     if (!isPlainObject(cloudData)) return;
     skipSyncRef.current = true;
     try {
@@ -5612,7 +5630,8 @@ export default function HomePage() {
                 currentUserId,
                 false,
                 { funds: Array.isArray(latestFunds) ? latestFunds : [] },
-                true
+                true,
+                options
               );
             }
           } catch (e) {
@@ -5628,7 +5647,7 @@ export default function HomePage() {
     }
   };
 
-  const fetchCloudConfig = async (userId, checkConflict = false) => {
+  const fetchCloudConfig = async (userId, checkConflict = false, options = {}) => {
     if (!userId) return;
     try {
       // 一次查询同时拿到 meta 与 data，方便两种模式复用
@@ -5657,7 +5676,7 @@ export default function HomePage() {
 
       // 非冲突检查模式：直接复用上方查询到的 meta 数据，覆盖本地
       if (meta.data && isPlainObject(meta.data) && Object.keys(meta.data).length > 0) {
-        await applyCloudConfig(meta.data, meta.updated_at);
+        await applyCloudConfig(meta.data, meta.updated_at, options);
         return;
       }
 
@@ -5668,7 +5687,8 @@ export default function HomePage() {
     }
   };
 
-  const syncUserConfig = async (userId, showTip = true, payload = null, isPartial = false) => {
+  const syncUserConfig = async (userId, showTip = true, payload = null, isPartial = false, options = {}) => {
+    const forceTakeover = options?.forceTakeover || false;
     if (!userId) {
       showToast(`userId 不存在，请重新登录`, 'error');
       return;
@@ -5707,42 +5727,76 @@ export default function HomePage() {
         // 增量更新：使用 RPC 调用
         const { error: rpcError } = await supabase.rpc('update_user_config_partial', {
           payload: dataToSync,
-          p_last_device_id: deviceId
+          p_last_device_id: deviceId,
+          p_force_takeover: forceTakeover
         });
 
         if (rpcError) {
+          if (rpcError.message?.includes('DEVICE_CONFLICT')) {
+            setIsSyncing(false);
+            skipSyncRef.current = true;
+            setDeviceConflictModal({
+              open: true,
+              message: '您的账号已在其他设备登录。当前设备的同步已被拦截。是否确认拉取云端最新数据覆盖本地并恢复同步？',
+              userId,
+              payload,
+              isPartial
+            });
+            return;
+          }
           console.error('增量同步失败，尝试全量同步', rpcError);
           // RPC 失败回退到全量更新
           const fullPayload = collectLocalPayload();
-          const { error } = await supabase
-            .from('user_configs')
-            .upsert(
-              {
-                user_id: userId,
-                data: fullPayload,
-                updated_at: now
-              },
-              { onConflict: 'user_id' }
-            );
-          if (error) throw error;
+          const { error: fullError } = await supabase.rpc('update_user_config_full', {
+            payload: fullPayload,
+            p_last_device_id: deviceId,
+            p_force_takeover: forceTakeover
+          });
+          if (fullError) {
+            if (fullError.message?.includes('DEVICE_CONFLICT')) {
+              setIsSyncing(false);
+              skipSyncRef.current = true;
+              setDeviceConflictModal({
+                open: true,
+                message: '您的账号已在其他设备登录。当前设备的同步已被拦截。是否确认拉取云端最新数据覆盖本地并恢复同步？',
+                userId,
+                payload,
+                isPartial
+              });
+              return;
+            }
+            throw fullError;
+          }
         }
       } else {
         // 全量更新
-        const { error } = await supabase
-          .from('user_configs')
-          .upsert(
-            {
-              user_id: userId,
-              data: dataToSync,
-              updated_at: now,
-              last_device_id: deviceId
-            },
-            { onConflict: 'user_id' }
-          );
-        if (error) throw error;
+        const { error } = await supabase.rpc('update_user_config_full', {
+          payload: dataToSync,
+          p_last_device_id: deviceId,
+          p_force_takeover: forceTakeover
+        });
+        if (error) {
+          if (error.message?.includes('DEVICE_CONFLICT')) {
+            setIsSyncing(false);
+            skipSyncRef.current = true;
+            setDeviceConflictModal({
+              open: true,
+              message: '您的账号已在其他设备登录。当前设备的同步已被拦截。是否确认拉取云端最新数据覆盖本地并恢复同步？',
+              userId,
+              payload,
+              isPartial
+            });
+            return;
+          }
+          throw error;
+        }
       }
 
       storageHelper.setItem('localUpdatedAt', now);
+      
+      if (forceTakeover) {
+        lastSyncedRef.current = getComparablePayload(dataToSync);
+      }
 
       if (showTip) {
         setSuccessModal({ open: true, message: '已同步云端配置' });
@@ -5760,7 +5814,7 @@ export default function HomePage() {
   const handleSyncLocalConfig = async () => {
     const userId = cloudConfigModal.userId;
     setCloudConfigModal({ open: false, userId: null });
-    await syncUserConfig(userId);
+    await syncUserConfig(userId, true, null, false, { forceTakeover: true });
   };
 
   const exportLocalData = async () => {
@@ -6574,6 +6628,7 @@ export default function HomePage() {
             refreshing={refreshing}
             fundsLength={funds.length}
             refreshCycleStartRef={refreshCycleStartRef}
+            paused={deviceConflictModal.open}
           />
           <button
             className="icon-button"
@@ -7733,6 +7788,31 @@ export default function HomePage() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {deviceConflictModal.open && (
+          <ConfirmModal
+            onClose={() => {
+              setDeviceConflictModal({ ...deviceConflictModal, open: false });
+              skipSyncRef.current = false;
+              refreshCycleStartRef.current = Date.now();
+            }}
+            onConfirm={async () => {
+              const { userId } = deviceConflictModal;
+              setDeviceConflictModal({ ...deviceConflictModal, open: false });
+              refreshCycleStartRef.current = Date.now();
+              // 1. 拉取云端最新数据覆盖本地，传入 forceTakeover 避免拉取后合并数据时触发逆向同步导致的异常拦截
+              await fetchCloudConfig(userId, false, { forceTakeover: true });
+              // 2. 携带 forceTakeover 强制同步一次，夺回设备活跃锁
+              await syncUserConfig(userId, true, null, false, { forceTakeover: true });
+            }}
+            title="其它设备登录提示"
+            message={deviceConflictModal.message}
+            confirmText="确认接管"
+            icon={<RefreshCw width="20" height="20" className="shrink-0 text-[var(--primary)]" />}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {cloudConfigModal.open && (
           <CloudConfigModal
             type={cloudConfigModal.type}
@@ -7740,6 +7820,7 @@ export default function HomePage() {
             onCancel={() => {
               if (cloudConfigModal.type === 'conflict' && cloudConfigModal.cloudData) {
                 applyCloudConfig(cloudConfigModal.cloudData);
+                syncUserConfig(cloudConfigModal.userId, false, cloudConfigModal.cloudData, false, { forceTakeover: true });
               } else {
                 skipSyncRef.current = false;
               }
