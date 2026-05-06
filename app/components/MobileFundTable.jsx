@@ -1802,8 +1802,10 @@ export default function MobileFundTable({
           const hasText = text != null && text !== '—';
           return (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0 }}>
-              <span className={cls} style={{ fontWeight: 700 }}>
-                {text ?? '—'}
+              <span className={cls} style={{ display: 'block', width: '100%', fontWeight: 700 }}>
+                <FitText maxFontSize={14} minFontSize={10}>
+                  {text ?? '—'}
+                </FitText>
               </span>
               {hasText && displayTime && displayTime !== '-' ? (
                 <span className="muted" style={{ fontSize: '10px' }}>{displayTime}</span>
