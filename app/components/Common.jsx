@@ -47,7 +47,6 @@ export function ConsecutiveTrendBadge({ trend }) {
         color: color,
         fontSize: '11px',
         fontWeight: 'bold',
-        marginLeft: '4px',
         marginRight: '4px',
         verticalAlign: 'middle',
         position: 'relative',
