@@ -61,6 +61,7 @@ import SettingsModal from "./components/SettingsModal";
 import SuccessModal from "./components/SuccessModal";
 import TradeModal from "./components/TradeModal";
 import TransactionHistoryModal from "./components/TransactionHistoryModal";
+import TutorialDrawer from "./components/TutorialDrawer";
 import UserMenu from "./components/UserMenu";
 import RefreshButton from "./components/RefreshButton";
 // 低频弹窗：懒加载，减少首屏 JS 解析体积
@@ -442,6 +443,7 @@ export default function HomePage() {
   const lastScrollYRef = useRef(0);
   const [portfolioEarningsOpen, setPortfolioEarningsOpen] = useState(false);
   const [mobileFundDrawerOpen, setMobileFundDrawerOpen] = useState(false);
+  const [tutorialDrawerOpen, setTutorialDrawerOpen] = useState(false);
   const [mobileTableSettingModalOpen, setMobileTableSettingModalOpen] = useState(false);
   const [fundTagsEdit, setFundTagsEdit] = useState({
     open: false,
@@ -6655,6 +6657,13 @@ export default function HomePage() {
             onOpenLogin={handleOpenLogin}
             onLogout={handleLogout}
             onLogoutConfirmOpenChange={setIsLogoutConfirmOpen}
+            onTutorial={() => {
+              if (isMobile) {
+                setTutorialDrawerOpen(true);
+              } else {
+                window.open('https://jcle26f8aw.feishu.cn/docx/Qis6d6ntFoaTOZxPVlUckVIpn8c', '_blank');
+              }
+            }}
           />
         </div>
       </div>
@@ -7337,9 +7346,13 @@ export default function HomePage() {
           lastSyncDisplay={lastSyncTime ? dayjs(lastSyncTime).format('MM-DD HH:mm') : null}
           onLogin={handleOpenLogin}
           onMyEarnings={() => setPortfolioEarningsOpen(true)}
-          onTutorial={() =>
-            sonnerToast.info('敬请期待~')
-          }
+          onTutorial={() => {
+            if (isMobile) {
+              setTutorialDrawerOpen(true);
+            } else {
+              window.open('https://jcle26f8aw.feishu.cn/docx/Qis6d6ntFoaTOZxPVlUckVIpn8c', '_blank');
+            }
+          }}
           onFeedback={() => {
             if (!user?.id) {
               sonnerToast.error('请先登录后再提交反馈');
@@ -7378,6 +7391,12 @@ export default function HomePage() {
       <AnimatePresence>
         {weChatOpen && (
             <WeChatModal onClose={() => setWeChatOpen(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {tutorialDrawerOpen && (
+          <TutorialDrawer open onOpenChange={setTutorialDrawerOpen} />
         )}
       </AnimatePresence>
 
