@@ -62,6 +62,7 @@ import SuccessModal from "./components/SuccessModal";
 import TradeModal from "./components/TradeModal";
 import TransactionHistoryModal from "./components/TransactionHistoryModal";
 import TutorialDrawer from "./components/TutorialDrawer";
+import UpdateLogModal from "./components/UpdateLogModal";
 import UserMenu from "./components/UserMenu";
 import RefreshButton from "./components/RefreshButton";
 // 低频弹窗：懒加载，减少首屏 JS 解析体积
@@ -442,6 +443,7 @@ export default function HomePage() {
   const [portfolioEarningsOpen, setPortfolioEarningsOpen] = useState(false);
   const [mobileFundDrawerOpen, setMobileFundDrawerOpen] = useState(false);
   const [tutorialDrawerOpen, setTutorialDrawerOpen] = useState(false);
+  const [updateLogOpen, setUpdateLogOpen] = useState(false);
   const [mobileTableSettingModalOpen, setMobileTableSettingModalOpen] = useState(false);
   const [fundTagsEdit, setFundTagsEdit] = useState({
     open: false,
@@ -6643,6 +6645,7 @@ export default function HomePage() {
                 window.open('https://jcle26f8aw.feishu.cn/docx/Qis6d6ntFoaTOZxPVlUckVIpn8c', '_blank');
               }
             }}
+            onUpdateLog={() => setUpdateLogOpen(true)}
           />
         </div>
       </div>
@@ -7332,6 +7335,7 @@ export default function HomePage() {
               window.open('https://www.yuque.com/u267605/ookgim/im06q8tembbld6im?singleDoc', '_blank');
             }
           }}
+          onUpdateLog={() => setUpdateLogOpen(true)}
           onFeedback={() => {
             if (!user?.id) {
               sonnerToast.error('请先登录后再提交反馈');
@@ -7376,6 +7380,12 @@ export default function HomePage() {
       <AnimatePresence>
         {tutorialDrawerOpen && (
           <TutorialDrawer open onOpenChange={setTutorialDrawerOpen} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {updateLogOpen && (
+          <UpdateLogModal open onOpenChange={setUpdateLogOpen} />
         )}
       </AnimatePresence>
 
