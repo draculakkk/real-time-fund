@@ -2409,6 +2409,11 @@ export default function HomePage() {
       }
       dirtyKeysRef.current.add(key);
 
+      // fundValuationTimeseries 参与云端同步，但不主动触发同步，等待其他操作触发时一并提交
+      if (key === 'fundValuationTimeseries') {
+        return;
+      }
+
       if (!skipSyncRef.current) {
         const now = nowInTz().toISOString();
         storageStore.setItem('localUpdatedAt', now);
@@ -2424,7 +2429,7 @@ export default function HomePage() {
   }, [setOnSync, scheduleSync]);
 
   useEffect(() => {
-    // 仅以下 key 的变更会触发云端同步；fundValuationTimeseries 不在其中
+    // 仅以下 key 的跨标签页变更会触发云端同步；fundValuationTimeseries 采用跟随同步策略，不主动触发
     const keys = new Set(['funds', 'tags', 'favorites', 'groups', 'collapsedCodes', 'collapsedTrends', 'collapsedEarnings', 'refreshMs', 'holdings', 'groupHoldings', 'pendingTrades', 'dcaPlans', 'customSettings', 'fundDailyEarnings']);
     const onStorage = (e) => {
       if (!e.key) return;
@@ -3992,6 +3997,10 @@ export default function HomePage() {
 
               const start = addDays(lastRecordedDate, 1);
               const navRows = await fetchFundNetValueRange(data.code, lastRecordedDate, latestNavDate);
+              if (Number.isFinite(latestNav) && latestNav > 0 && !navRows.some(r => r.date === latestNavDate)) {
+                navRows.push({ date: latestNavDate, nav: latestNav });
+                navRows.sort((a, b) => a.date.localeCompare(b.date));
+              }
               if (fundCodeStillInStorage(data.code)) {
                 for (const r of navRows) navCache.set(r.date, r.nav);
                 const firstIdx = navRows.findIndex((r) => r.date >= start);
@@ -5108,7 +5117,10 @@ export default function HomePage() {
   const collectLocalPayload = (keys = null) => {
     try {
       const all = {};
-      // 不包含 fundValuationTimeseries，该数据暂不同步到云端
+      // 不包含 fundValuationTimeseries（作为频繁更新数据，仅在全量同步或特定触发时同步，不加入实时同步键列表）
+      if (!keys || keys.has('fundValuationTimeseries')) {
+        all.fundValuationTimeseries = storageStore.getItem('fundValuationTimeseries', {});
+      }
       if (!keys || keys.has('funds')) {
         all.funds = storageStore.getItem('funds', []);
       }
@@ -5576,6 +5588,17 @@ export default function HomePage() {
         return acc;
       }, {});
       setFundDailyEarnings(nextFundDailyEarnings);
+
+      if (hasOwn(cloudData, 'fundValuationTimeseries')) {
+        const nextTimeseries = isPlainObject(cloudData.fundValuationTimeseries) ? cloudData.fundValuationTimeseries : {};
+        const cleanedTimeseries = {};
+        Object.keys(nextTimeseries).forEach(code => {
+          if (nextFundCodes.has(code) && Array.isArray(nextTimeseries[code])) {
+            cleanedTimeseries[code] = nextTimeseries[code];
+          }
+        });
+        storageStore.setItem('fundValuationTimeseries', JSON.stringify(cleanedTimeseries));
+      }
 
       if (isPlainObject(cloudData.customSettings)) {
         try {
@@ -6645,7 +6668,7 @@ export default function HomePage() {
               if (isMobile) {
                 setTutorialDrawerOpen(true);
               } else {
-                window.open('https://jcle26f8aw.feishu.cn/docx/Qis6d6ntFoaTOZxPVlUckVIpn8c', '_blank');
+                window.open('https://www.yuque.com/u267605/ookgim/im06q8tembbld6im?singleDoc', '_blank');
               }
             }}
             onUpdateLog={() => setUpdateLogOpen(true)}
